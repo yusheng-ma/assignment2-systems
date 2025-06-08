@@ -16,6 +16,8 @@ dependencies = [
     "tqdm>=4.67.1",
     "wandb>=0.19.7",
     "pandas>=2",
+    "omegaconf>=2.3.0",
+    "scalene>=1.5.51",
 ]
 
 [tool.setuptools.packages.find]

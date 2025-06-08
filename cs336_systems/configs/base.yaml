@@ -1,0 +1,17 @@
+# base parameters that can be inherited
+
+model:
+  vocab_size: 10000
+  context_length: 256
+  d_model: 768
+  d_ff: 3072
+  num_layers: 12
+  num_heads: 12
+  rope_theta: 10000
+
+benchmark:
+  batch_size: 8
+  warmup_steps: 5
+  eval_steps: 10
+  forward_only: false
+  device: "cuda"
