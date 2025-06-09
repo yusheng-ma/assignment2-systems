@@ -167,3 +167,5 @@ cython_debug/
 
 profile.html
 profile.json
+
+outputs/
