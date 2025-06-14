@@ -20,6 +20,7 @@ def flash_fwd_kernel(
     D: tl.constexpr,
     Q_TILE_SIZE: tl.constexpr,
     K_TILE_SIZE: tl.constexpr,
+    is_causal: tl.constexpr,
 ):
     # Program indices
     query_tile_index = tl.program_id(0)
@@ -85,6 +86,16 @@ def flash_fwd_kernel(
 
         Sij = tl.dot(Q_tilei, tl.trans(K_tilej)) * scale
 
+        if is_causal:
+            seq_qi = query_tile_index * Q_TILE_SIZE + tl.arange(0, Q_TILE_SIZE)
+            seq_kj = K_TILE_SIZE * j + tl.arange(0, K_TILE_SIZE)
+
+            qi = seq_qi[:, None]
+            kj = seq_kj[None, :]
+
+            causal_mask = qi >= kj
+            Sij = tl.where(causal_mask, Sij, -1e6)
+
         mij = tl.maximum(mi, tl.max(Sij, axis=-1))
 
         Pij_hat = tl.exp(Sij - mij[:, None])
@@ -126,6 +137,7 @@ class MyTritonFlashAttentionAutogradFunctionClass(torch.autograd.Function):
 
         ctx.Q_TILE_SIZE = 16
         ctx.K_TILE_SIZE = 16
+        ctx.is_causal = is_causal
 
         O = torch.empty(batch_size, n_queries, dim_key, dtype=torch.float32, device=device)
         L = torch.empty(batch_size, n_queries, dtype=torch.float32, device=device)
@@ -143,6 +155,7 @@ class MyTritonFlashAttentionAutogradFunctionClass(torch.autograd.Function):
             D=dim_key,
             Q_TILE_SIZE=ctx.Q_TILE_SIZE,
             K_TILE_SIZE=ctx.K_TILE_SIZE,
+            is_causal=ctx.is_causal,
         )
 
         ctx.save_for_backward(O, Q, K, V, L)

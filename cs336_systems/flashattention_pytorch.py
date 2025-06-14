@@ -1,5 +1,6 @@
 import math
 import torch
+import einx
 from torch import Tensor
 from jaxtyping import Float
 from einops import einsum, rearrange
@@ -46,6 +47,23 @@ class MyFlashAttentionAutogradFunctionClass(torch.autograd.Function):
                 Sij = einsum(Q_tile[..., i, :, :], K_tile[..., j, :, :],
                              "... B_QUERY dim_key, ... B_KEY dim_key -> ... B_QUERY B_KEY") / math.sqrt(dim_key)
                 
+                if is_causal:
+                    #  masked out, add the constant value of -1e6 to the corresponding elements of the attention score matrix S(j)
+                    seq_qi = torch.arange(B_QUERY * i, B_QUERY * i + B_QUERY, device=device)
+                    seq_kj = torch.arange(B_KEY * j, B_KEY * j + B_KEY, device=device)
+                    
+                    qi = einx.rearrange('query -> query 1', seq_qi)   # (B_QUERY, 1)
+                    kj = einx.rearrange('key -> 1 key', seq_kj)       # (1, B_KEY)
+
+                    causal_mask = qi >= kj                            # (B_QUERY, B_KEY)
+                    Sij = torch.where(causal_mask, Sij, float("-inf"))
+
+                    # seq = torch.arange(sequence_length, device=x.device)
+                    # qi = einx.rearrange('query -> b... 1 query 1', seq, b=[1] * len(b))
+                    # kj = einx.rearrange('key   -> b... 1 1   key', seq, b=[1] * len(b))
+                    # causal_mask = qi >= kj  # (query, key)
+                    # attention_scores = torch.where(mask, attention_scores, float("-inf"))
+
                 # --- Assert shapes ---
                 assert Sij.shape[-2:] == (B_QUERY, B_KEY), f"Unexpected shape for Sij: {Sij.shape}"
                 assert mi.shape[-1] == B_QUERY, f"Unexpected shape for mi: {mi.shape}"
