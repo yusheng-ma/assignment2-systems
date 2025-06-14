@@ -99,11 +99,11 @@ def flash_fwd_kernel(
 
         mij = tl.maximum(mi, tl.max(Sij, axis=-1))
 
-        Pij_hat = tl.exp(Sij - mij[:, None])
+        Pij_hat = tl.exp2(Sij - mij[:, None])
 
-        lij = tl.exp(mi - mij) * li + tl.sum(Pij_hat, axis=-1)
+        lij = tl.exp2(mi - mij) * li + tl.sum(Pij_hat, axis=-1)
 
-        diag = tl.exp(mi - mij)[:, None] * Oi
+        diag = tl.exp2(mi - mij)[:, None] * Oi
 
         Pij_hat_cast = Pij_hat.to(V_tilej.dtype)
         Oij = tl.dot(Pij_hat_cast, V_tilej, acc=diag)
@@ -116,7 +116,7 @@ def flash_fwd_kernel(
         V_block_ptr = V_block_ptr.advance((K_TILE_SIZE, 0))
     
     Oi = (1.0 / li)[:, None] * Oi
-    Li = mi + tl.log(li)
+    Li = mi + tl.log2(li)
 
     Oi_cast = Oi.to(O_block_ptr.type.element_ty)
     tl.store(O_block_ptr, Oi_cast, boundary_check=(0, 1))
@@ -129,7 +129,7 @@ def backward_impl(Q, K, V, O, dO, L, is_causal=False):
     device = Q.device
     S = einsum(Q, K, "... q d, ... k d -> ... q k") / math.sqrt(dim_key)
 
-    P = torch.exp(S - L[..., None])
+    P = torch.exp2(S - L[..., None])
 
     if is_causal:
         seq_q = torch.arange(0, n_queries, device=device)
