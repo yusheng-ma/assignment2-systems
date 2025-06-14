@@ -4,6 +4,7 @@ import triton
 import triton.language as tl
 from torch import Tensor
 from jaxtyping import Float
+from einops import einsum
 
 
 @triton.jit
@@ -122,6 +123,46 @@ def flash_fwd_kernel(
     tl.store(L_block_ptr, Li, boundary_check=(0,))
 
 
+def backward_impl(Q, K, V, O, dO, L, is_causal=False):
+    batch_size, n_queries, dim_key = Q.shape
+    _, n_keys, _ = V.shape
+    device = Q.device
+    S = einsum(Q, K, "... q d, ... k d -> ... q k") / math.sqrt(dim_key)
+
+    P = torch.exp(S - L[..., None])
+
+    if is_causal:
+        seq_q = torch.arange(0, n_queries, device=device)
+        seq_k = torch.arange(0, n_keys, device=device)
+
+        qi = seq_q[:, None]
+        kj = seq_k[None, :]
+
+        causal_mask = qi >= kj
+        P = torch.where(causal_mask, P, 0.0)
+
+    dV = einsum(P, dO, "... q k, ... q d -> ... k d")
+
+    dP = einsum(dO, V, "... q d, ... k d -> ... q k")
+
+    # D vector
+    D = einsum(P, dP, "... q k, ... q k -> ... q")
+
+    dS = einsum(P, dP - D[..., None], "... q k, ... q k -> ... q k")
+    if is_causal:
+        dS = torch.where(causal_mask, dS, 0.0)
+
+    dQ = einsum(dS, K, "... q k, ... k d -> ... q d") / math.sqrt(dim_key)
+
+    dK = einsum(dS, Q, "... q k, ... q d -> ... k d") / math.sqrt(dim_key)
+    # torch compile
+
+    return dQ, dK, dV
+
+
+compiled_backward = torch.compile(backward_impl)
+
+
 class MyTritonFlashAttentionAutogradFunctionClass(torch.autograd.Function):
     @staticmethod
     def forward(
@@ -162,5 +203,10 @@ class MyTritonFlashAttentionAutogradFunctionClass(torch.autograd.Function):
         return O
 
     @staticmethod
-    def backward(ctx):
-        pass
+    def backward(ctx, dO):
+        O, Q, K, V, L = ctx.saved_tensors
+        is_causal = ctx.is_causal
+        
+        dQ, dK, dV = compiled_backward(Q, K, V, O, dO, L, is_causal)
+
+        return dQ, dK, dV, None # none for is_causal
