@@ -176,8 +176,17 @@ class MyTritonFlashAttentionAutogradFunctionClass(torch.autograd.Function):
         _, n_keys, _ = V.shape
         device = Q.device
 
-        ctx.Q_TILE_SIZE = 16
-        ctx.K_TILE_SIZE = 16
+        def pick_tile_sizes(seq_len):
+            if seq_len <= 512:
+                return 32, 32
+            elif seq_len <= 4096:
+                return 32, 32
+            elif seq_len <= 16384:
+                return 32, 32
+            else:
+                return 32, 32 # easily outofresource GPU SM 0.0...
+
+        ctx.Q_TILE_SIZE, ctx.K_TILE_SIZE = pick_tile_sizes(n_queries)
         ctx.is_causal = is_causal
 
         O = torch.empty(batch_size, n_queries, dim_key, dtype=torch.float32, device=device)
