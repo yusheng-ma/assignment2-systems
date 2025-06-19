@@ -15,16 +15,16 @@ import pandas as pd
 # ==== MACRO CONFIG ====
 MODEL_CONFIG = {
     "vocab_size": 10000,
-    "context_length": 256,
-    "d_model": 768,
-    "d_ff": 3072,
-    "num_layers": 12,
-    "num_heads": 12,
+    "context_length": 128,
+    "d_model": 1024,
+    "d_ff": 4096,
+    "num_layers": 24,
+    "num_heads": 16,
     "rope_theta": 10000.0
 }
 
 BENCHMARK_CONFIG = {
-    "batch_size": 32,
+    "batch_size": 16,
     "eval_steps": 10,
     "warmup_steps": 5,
     "lr": 1e-3
